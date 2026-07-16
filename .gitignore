@@ -1,0 +1,34 @@
+# python runtime artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# virtual environments
+.venv/
+venv/
+env/
+
+# local environment and secrets
+.env
+.env.*
+!.env.example
+
+# test and coverage output
+.coverage
+coverage/
+htmlcov/
+.pytest_cache/
+
+# editor and OS files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# temporary files
+tmp/
+temp/
+*.log

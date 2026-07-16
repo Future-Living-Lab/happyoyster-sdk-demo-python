@@ -1,0 +1,2 @@
+# This project has no runtime dependencies and uses only the Python standard library (Python >= 3.9 required).
+# This file documents the dependency policy; review the README before adding dependencies.
