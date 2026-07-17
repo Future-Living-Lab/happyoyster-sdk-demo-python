@@ -17,6 +17,7 @@ class BailianProviderTest(unittest.TestCase):
                 path="/openapi/v1/worlds",
                 search="?dry_run=true",
                 headers={
+                    "accept-encoding": "gzip, deflate, br",
                     "content-type": "application/json",
                     "x-dashscope-uid": "must-not-forward",
                     "x-dashscope-inner-entity-id": "must-not-forward",
@@ -35,6 +36,7 @@ class BailianProviderTest(unittest.TestCase):
         )
         self.assertEqual(call["method"], "POST")
         self.assertEqual(call["headers"]["authorization"], "Bearer sk-test")
+        self.assertEqual(call["headers"]["accept-encoding"], "identity")
         self.assertEqual(call["headers"]["content-type"], "application/json")
         self.assertNotIn("x-dashscope-uid", call["headers"])
         self.assertNotIn("x-dashscope-inner-entity-id", call["headers"])

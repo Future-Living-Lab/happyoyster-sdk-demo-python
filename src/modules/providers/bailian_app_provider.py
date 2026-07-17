@@ -14,6 +14,7 @@ def _build_headers(proxy_request, config):
     headers = copy_forwardable_headers(proxy_request.headers)
 
     headers["authorization"] = f"Bearer {config.dashscope_api_key}"
+    headers["accept-encoding"] = "identity"
 
     if proxy_request.body and "content-type" not in headers:
         headers["content-type"] = "application/json"
