@@ -24,6 +24,7 @@ class BailianProviderTest(unittest.TestCase):
                     "x-ho-uid": "must-not-forward",
                 },
                 body=body,
+                mode=2,
             ),
             config=test_config(),
             fetch_impl=fetch,
@@ -32,7 +33,7 @@ class BailianProviderTest(unittest.TestCase):
         call = fetch.last_call
         self.assertEqual(
             call["url"],
-            "https://example.test/api/v2/apps/happyoyster-1.0/openapi/v1/worlds?dry_run=true",
+            "https://example.test/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds?dry_run=true",
         )
         self.assertEqual(call["method"], "POST")
         self.assertEqual(call["headers"]["authorization"], "Bearer sk-test")

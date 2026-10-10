@@ -23,7 +23,10 @@ def test_config():
     return Config(
         host="127.0.0.1",
         port=0,
-        bailian_gateway_base_url="https://example.test/api/v2/apps/happyoyster-1.0",
+        bailian_gateway_base_urls_by_mode={
+            mode: f"https://example.test/api/v2/apps/happyoyster-1.0-{name}"
+            for mode, name in ((1, "adventure"), (2, "directing"), (3, "acting"))
+        },
         bailian_api_origin="https://example.test",
         dashscope_api_key="sk-test",
         request_timeout_ms=1_000,

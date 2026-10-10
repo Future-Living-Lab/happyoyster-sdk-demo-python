@@ -3,11 +3,16 @@
 import os
 import re
 from dataclasses import dataclass
+from typing import Mapping
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 3000
 DEFAULT_REQUEST_TIMEOUT_MS = 130_000
-BAILIAN_GATEWAY_PATH = "api/v2/apps/happyoyster-1.0"
+APP_IDS = {
+    1: "happyoyster-1.0-adventure",
+    2: "happyoyster-1.0-directing",
+    3: "happyoyster-1.0-acting",
+}
 API_HOST_PATTERN = re.compile(
     r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
     r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
@@ -19,7 +24,7 @@ API_HOST_PATTERN = re.compile(
 class Config:
     host: str
     port: int
-    bailian_gateway_base_url: str
+    bailian_gateway_base_urls_by_mode: Mapping[int, str]
     bailian_api_origin: str
     dashscope_api_key: str
     request_timeout_ms: int
@@ -49,14 +54,14 @@ def _normalize_api_host(name, api_host):
             f"{name} must be a valid Bailian API Host, e.g. "
             "llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com"
         )
-    return f"https://{api_host}/{BAILIAN_GATEWAY_PATH}", f"https://{api_host}"
+    return api_host, f"https://{api_host}"
 
 
 def load_env(env=None):
     if env is None:
         env = os.environ
 
-    bailian_gateway_base_url, bailian_api_origin = _normalize_api_host(
+    bailian_api_host, bailian_api_origin = _normalize_api_host(
         "BAILIAN_API_HOST",
         _require_non_blank("BAILIAN_API_HOST", env.get("BAILIAN_API_HOST")),
     )
@@ -67,7 +72,10 @@ def load_env(env=None):
     return Config(
         host=env.get("HOST") or DEFAULT_HOST,
         port=_parse_positive_int("PORT", env.get("PORT"), DEFAULT_PORT),
-        bailian_gateway_base_url=bailian_gateway_base_url,
+        bailian_gateway_base_urls_by_mode={
+            mode: f"https://{bailian_api_host}/api/v2/apps/{app_id}"
+            for mode, app_id in APP_IDS.items()
+        },
         bailian_api_origin=bailian_api_origin,
         dashscope_api_key=dashscope_api_key,
         request_timeout_ms=_parse_positive_int(

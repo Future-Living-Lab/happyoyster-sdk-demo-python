@@ -102,7 +102,7 @@ ticket 有效期为 30 分钟且只能消费一次。临时 API Key 过期刷新
 
 本 demo 只走百炼 app 网关，和真实三方接入路径保持一致。
 
-`BAILIAN_API_HOST` 可以从百炼控制台 API Key 页的“API Host”获取，例如 `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`。本 demo 内部会补全固定网关路径 `https://{BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0`。
+`BAILIAN_API_HOST` 可以从百炼控制台 API Key 页的“API Host”获取，例如 `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`。本 demo 按模式选择固定线上 App ID（`1=adventure`、`2=directing`、`3=acting`），拼接 `https://{BAILIAN_API_HOST}/api/v2/apps/{APP_ID}`。只支持正式版 App ID。创建/列举世界时传 `mode`；后续请求传 `X-Happy-Oyster-Mode: 1|2|3`。
 
 管理类和仅服务端接口中的 `DASHSCOPE_API_KEY` 必须使用主 API Key。支持临时 Key 的客户端 SDK 运行态接口应使用临时 Key。如果使用临时 API Key 调用只允许主 API Key 的接口，服务端会返回 `403003 MAIN_API_KEY_REQUIRED`。
 

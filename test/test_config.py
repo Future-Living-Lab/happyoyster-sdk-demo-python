@@ -4,7 +4,10 @@ from src.config import load_env
 
 
 API_HOST = "llm-example.cn-beijing.maas.aliyuncs.com"
-GATEWAY_BASE_URL = f"https://{API_HOST}/api/v2/apps/happyoyster-1.0"
+GATEWAY_BASE_URLS = {
+    mode: f"https://{API_HOST}/api/v2/apps/happyoyster-1.0-{name}"
+    for mode, name in ((1, "adventure"), (2, "directing"), (3, "acting"))
+}
 
 
 class LoadEnvTest(unittest.TestCase):
@@ -54,7 +57,7 @@ class LoadEnvTest(unittest.TestCase):
 
         self.assertEqual(config.host, "127.0.0.1")
         self.assertEqual(config.port, 3000)
-        self.assertEqual(config.bailian_gateway_base_url, GATEWAY_BASE_URL)
+        self.assertEqual(config.bailian_gateway_base_urls_by_mode, GATEWAY_BASE_URLS)
         self.assertEqual(config.bailian_api_origin, f"https://{API_HOST}")
         self.assertEqual(config.dashscope_api_key, "sk-test")
         self.assertEqual(config.request_timeout_ms, 130_000)
@@ -74,7 +77,7 @@ class LoadEnvTest(unittest.TestCase):
         )
 
         self.assertEqual(config.dashscope_api_key, "sk-test")
-        self.assertEqual(config.bailian_gateway_base_url, GATEWAY_BASE_URL)
+        self.assertEqual(config.bailian_gateway_base_urls_by_mode, GATEWAY_BASE_URLS)
         self.assertEqual(config.bailian_api_origin, f"https://{API_HOST}")
         self.assertEqual(config.port, 3100)
         self.assertEqual(config.request_timeout_ms, 5000)

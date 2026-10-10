@@ -102,7 +102,7 @@ This demo assumes one user and one main API Key; it does not implement login, us
 
 This demo only goes through the Bailian app gateway, matching the real third-party integration path.
 
-`BAILIAN_API_HOST` comes from the "API Host" field on the API Key page of the Bailian console, e.g. `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`. This demo completes the fixed gateway path internally as `https://{BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0`.
+`BAILIAN_API_HOST` comes from the "API Host" field on the API Key page of the Bailian console, e.g. `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`. This demo selects the fixed online App ID by mode (`1=adventure`, `2=directing`, `3=acting`) and builds `https://{BAILIAN_API_HOST}/api/v2/apps/{APP_ID}`. Only production App IDs are supported. Set `mode` in World creation/list requests and `X-Happy-Oyster-Mode: 1|2|3` for follow-up requests.
 
 `DASHSCOPE_API_KEY` must be a main API Key for management and server-only endpoints. Client SDK runtime endpoints that support temporary Keys must use the temporary Key instead. If a temporary API Key is used to call an endpoint that requires the main API Key, the server returns `403003 MAIN_API_KEY_REQUIRED`.
 

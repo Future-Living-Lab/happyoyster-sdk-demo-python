@@ -26,11 +26,12 @@ The SDK only calls the public business address of the Bailian app gateway. After
 
 | Item                 | Value                                                                                       |
 | ---------------- | ------------------------------------------------------------------------------------------- |
+| App ID          | Modes `1/2/3` select `happyoyster-1.0-adventure` / `happyoyster-1.0-directing` / `happyoyster-1.0-acting` |
 | API Host        | `${BAILIAN_API_HOST}`, the Bailian API Host (bare host, without scheme or path) |
-| Full URL example     | `https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0/openapi/v1/worlds` |
+| Full URL example     | `https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds` |
 | Authentication             | `Authorization: Bearer ${API_KEY}`; use a temporary Key for supported SDK runtime endpoints and the main Key for management / server-only endpoints |
 
-`BAILIAN_API_HOST` is obtained from the "API Host" field on the API Key page of the Bailian console, for example `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`. The full OpenAPI gateway address is derived by adding the fixed path: `https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0`.
+`BAILIAN_API_HOST` is obtained from the "API Host" field on the API Key page of the Bailian console, for example `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`. The full OpenAPI gateway address is `https://${BAILIAN_API_HOST}/api/v2/apps/{APP_ID}`; mode 1/2/3 selects the Adventure/Directing/Acting App ID.
 
 The API Host must be used with an API Key from the same account and region; otherwise the gateway may return `AccessDenied` or `401`. API Keys are region-specific and cannot be used across regions.
 
@@ -55,7 +56,7 @@ When the gateway injects `x-dashscope-workspace`, the open platform isolates Wor
 
 ### 3.1 Request
 
-- Path: append the endpoint path directly to the derived OpenAPI gateway address. Example: `GET /openapi/v1/worlds` -> `GET https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0/openapi/v1/worlds`.
+- Path: select the App ID by mode, then append the endpoint path. Example: `GET /openapi/v1/worlds` -> `GET https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds`.
 - Query: passed through as-is, appended directly to the URL.
 - Body: for `POST` / `PUT` / `PATCH`, the JSON body is the business body; `GET` / `DELETE` have no body.
 
@@ -127,7 +128,7 @@ After the server issues them, the SDK passes them through as-is and must not fab
 
 | Enum        | Values                                                    |
 | ----------- | ------------------------------------------------------- |
-| mode type code | `1 = adventure`, `2 = directing`                               |
+| mode type code | `1 = adventure`, `2 = directing`, `3 = acting`                               |
 | World status    | `generating` / `ready` / `failed`                       |
 | Travel status    | `init` / `pending` / `running` / `completed` / `failed` |
 
@@ -208,7 +209,7 @@ curl -sS -X POST 'http://127.0.0.1:3000/server-api/temp-api-key?expire_in_second
 
 ## 5. Business Endpoint List
 
-Actual URL = `https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0` + endpoint path (for example `/openapi/v1/worlds`).
+Actual URL = `https://${BAILIAN_API_HOST}/api/v2/apps/{APP_ID}` + endpoint path (for example `/openapi/v1/worlds`); mode selects the App ID.
 
 | #   | Endpoint             | Method | Path                                       | Main Key required |
 | --- | ---------------- | ------ | ------------------------------------------ | -------- |
@@ -256,28 +257,27 @@ Request body:
 
 | Field                         | Type    | Required | Description                                           |
 | ---------------------------- | ------- | ---- | ---------------------------------------------- |
-| `mode`                       | integer | Yes   | `1=adventure`, `2=directing`                          |
+| `mode`                       | integer | Yes   | `1=adventure`, `2=directing`, `3=acting`                          |
 | `async`                      | boolean | No   | Default `true`; `false` waits synchronously                  |
 | `creationModel`              | string  | No   | `simple` (default) / `scriptlist`; only effective for `mode=2` |
-| `prompt`                     | string  | Conditional | World theme description; required for first_frame / Directing simple, scenario_role does not need a top-level prompt |
+| `prompt`                     | string  | Conditional | Required for Adventure / Acting first_frame and Directing simple; forbidden for ScriptList |
 | `eventStyle`                 | string  | No   | `normal` / `dramatic`                          |
 | `refWorldId`                 | string  | No   | Encrypted ID of the reference template world                            |
 | `perspective`                | string  | Conditional | Required for Adventure: `first_person` / `third_person`   |
-| `uploadMode`                 | string  | No   | Adventure: `first_frame` / `scenario_role`        |
-| `firstFrameImage`            | object  | No   | First-frame image for Adventure first_frame / Directing simple: `{ url or base64, referenceType }`, optional; required for scriptlist |
-| `sceneImage` / `roleImage`   | object  | No   | Adventure scenario_role: `{ url or base64, referenceType }` |
-| `scenePrompt` / `rolePrompt` | string  | No   | Adventure scene / role description                         |
-| `resolution`                 | string  | Conditional | Required for Directing: `480p` / `720p`                    |
+| `uploadMode`                 | string  | No   | Adventure / Acting: `first_frame` only |
+| `aspectRatio` | string | No | Acting only: `9:16` (default) / `16:9`; image ratio must match |
+| `firstFrameImage`            | object  | Conditional   | Required for Adventure / Acting and ScriptList; optional for Directing simple: `{ url or base64, referenceType }` |
+| `resolution`                 | string  | No | Directing: `480p` (default) / `720p` |
 | `layout`                     | string  | No   | Directing: `Stable` / `Fast`                       |
 | `narrative`                  | string  | No   | Directing: `Calm` / `Dramatic` / `Normal`          |
 | `inputImages`                | array   | No   | `[{ url or base64, referenceType }]`           |
 | `scriptList`                 | object  | Conditional | Required when `creationModel=scriptlist`              |
 
-Image reference objects `firstFrameImage`, `sceneImage`, `roleImage`, `inputImages[]`, and `scriptList.subjects[].refImage` share the same structure: `url` is an HTTP(S) image URL, `base64` accepts both raw base64 and a `data:image/xxx;base64,...` data URI, and `referenceType` is optional and defaults to `default`. `url` and `base64` must not both be non-empty in the same object. URL images and decoded base64 images must be JPG/JPEG/PNG/WebP, each strictly smaller than 30 MB, with at most 4096×4096 pixels after decoding. A first-frame image must also be landscape with a width-to-height ratio in the inclusive range `1.5..2.0`; other reference images do not have this ratio requirement.
+Image reference objects `firstFrameImage`, `inputImages[]`, and `scriptList.subjects[].refImage` use either an HTTP(S) `url` or `base64` (raw or a `data:image/xxx;base64,...` URI), but not both. `referenceType` is optional and defaults to `default`. Decoded JPG/JPEG/PNG/WebP images must be strictly smaller than 30 MB and at most 4096×4096 pixels. Adventure / Directing first frames require a landscape width-to-height ratio of `1.5..2.0`; Acting first frames must match `aspectRatio` (`9:16` by default, or `16:9`).
 
-An empty, empty-string, or whitespace-only `prompt` is all treated as missing by the upstream. The default `first_frame` and Directing simple creation must pass a non-empty `prompt`; `scenario_role` does not require a top-level `prompt`, but requires at least one non-empty value among `scenePrompt` / `rolePrompt`, or both `sceneImage` and `roleImage` to be provided, each containing either `url` or `base64`.
+A blank `prompt` is treated as missing. Adventure / Acting first_frame and Directing simple require a non-empty `prompt`; ScriptList creation instead requires `scriptList.synopsis`.
 
-`creationModel=scriptlist` only supports Directing worlds and requires `resolution`, `firstFrameImage` containing either `url` or `base64`, and `scriptList`. It does not accept prompt / Adventure fields such as `prompt`, `layout`, `narrative`, `inputImages`, `perspective`, `uploadMode`, `sceneImage`, `roleImage`, `scenePrompt`, or `rolePrompt`. Both creation and runtime `update-script` require exactly 45 acts, ordered as continuous, non-duplicate turns 1 through 45.
+`creationModel=scriptlist` only supports Directing worlds and requires `firstFrameImage` containing either `url` or `base64`, and `scriptList`. It does not accept prompt / Adventure fields such as `prompt`, `layout`, `narrative`, `inputImages`, `perspective`, `uploadMode`, `sceneImage`, `roleImage`, `scenePrompt`, or `rolePrompt`. Both creation and runtime `update-script` require exactly 45 acts, ordered as continuous, non-duplicate turns 1 through 45.
 
 Complete ScriptList schema and constraints:
 
@@ -317,7 +317,7 @@ Query: `page`, `pageSize`, `status`, `mode`.
 - `page` defaults to `1`
 - `pageSize` defaults to `20`, maximum `100`
 - `status`: `ready` / `failed` / `generating`
-- `mode`: integer, `1=adventure`, `2=directing`
+- `mode`: integer, `1=adventure`, `2=directing`, `3=acting`
 
 Response data: `items[]` + `pagination`.
 
@@ -461,7 +461,7 @@ Response data: `encryptedTravelId`, `composeStatus`, `video`.
 ## 7. Current Limitations / Notes
 
 1. Query parameters are camelCase. The backend reads `pageSize`, `encryptedWorldId`, etc.; Bailian passes the query through as-is, so snake_case forms such as `page_size` are ignored or fall back to defaults.
-2. `mode` is a numeric type code, `1=adventure`, `2=directing`. Creation, list filtering, and responses all use the numeric value; do not pass the legacy strings.
+2. `mode` is a numeric type code, `1=adventure`, `2=directing`, `3=acting`. Creation, list filtering, and responses all use the numeric value; do not pass the legacy strings.
 3. After starting the Travel, the client must monitor the stream status with `noStreamAutoEndTimeoutSec` as the upper bound; if no streaming state (e.g. `PUSHING`) is observed within the timeout, call `/openapi/v1/travels/end` with `failCode=TRAVEL_NO_STREAM_AUTO_END`.
 4. GET endpoints do not support the query parameter `userAgent`; World endpoints do not read `userAgent` from the body either. Use the HTTP `User-Agent` header for client identification.
 5. Some server-side latency headers are not passed through to the SDK, for example `X-WorldModel-Request-Received-At-Ms` and `X-WorldModel-Request-Completed-At-Ms`.
@@ -472,7 +472,7 @@ Response data: `encryptedTravelId`, `composeStatus`, `video`.
 ### 8.1 GET World List
 
 ```bash
-curl --location "https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0/openapi/v1/worlds?page=1&pageSize=10" \
+curl --location "https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds?page=1&pageSize=10&mode=2" \
   --header 'Authorization: Bearer ${DASHSCOPE_API_KEY}'
 ```
 
@@ -498,7 +498,7 @@ curl --location "https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0/openapi
 ### 8.2 POST Create World
 
 ```bash
-curl --location "https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0/openapi/v1/worlds" \
+curl --location "https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds" \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer ${DASHSCOPE_API_KEY}' \
   --data '{

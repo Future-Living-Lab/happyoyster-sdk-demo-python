@@ -17,7 +17,7 @@ export DASHSCOPE_API_KEY='sk-...'
 python3 server.py
 ```
 
-`BAILIAN_API_HOST` 从百炼控制台 API Key 页的“API Host”获取，例如 `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`。本 demo 内部会补全固定网关路径 `https://{BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0`。
+`BAILIAN_API_HOST` 从百炼控制台 API Key 页的“API Host”获取，例如 `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`。本 demo 按模式选择固定线上 App ID（`1=adventure`、`2=directing`、`3=acting`），拼接 `https://{BAILIAN_API_HOST}/api/v2/apps/{APP_ID}`。
 
 API Host 必须与同一账号、同一地域的 API Key 配套使用，否则网关可能返回 `AccessDenied` 或 `401`；各地域 API Key 相互独立，不能跨地域使用。
 
@@ -70,13 +70,15 @@ http://192.168.1.23:3100/server-api
 
 这是手机直接访问电脑 Python demo，不需要在手机 Wi-Fi 里配置代理。只有需要把 App 原本访问的线上域名转发到电脑抓包或本地服务时，才需要配置代理工具。若无法访问，检查 macOS 防火墙、同一局域网和访客网络隔离。
 
+创建和列举世界时从 body/query 读取 `mode`；后续请求传与世界模式一致的 `X-Happy-Oyster-Mode: 1|2|3`。
+
 通用响应约定：
 
 - 除 `POST /server-api/temp-api-key` 外，业务响应在 `output` 内。
 - 成功判断：`output.code == 0`。
 - 业务数据：读取 `output.data`。
 - 若返回顶层字符串 `code`，按代理或网关层错误处理。
-- `mode` 使用数值：`1=adventure`，`2=directing`，不要传字符串。
+- `mode` 使用数值：`1=adventure`，`2=directing`，`3=acting`，不要传字符串。
 - 不要在 GET Query 或 World POST body 中传 `userAgent`；如需标识客户端，使用 HTTP `User-Agent` Header。
 - 当前 demo 按单用户 / 单主 API Key 场景演示，不做业务用户隔离。
 - 百炼网关注入 workspace 时，World / Travel 按 `uid + workspace` 隔离；跨 workspace 的 World 断言 `403001`，Travel 断言 `404000`。不要自行构造 `x-dashscope-*` / `X-Ho-*` Header。
@@ -135,9 +137,12 @@ curl -sS -X POST 'http://127.0.0.1:3000/server-api/temp-api-key' \
 
 ```json
 {
-  "success": false,
-  "errorCode": "PARAM_INVALID",
-  "message": "expire_in_seconds must be an integer between 1 and 1800"
+  "request_id": "随机 UUID",
+  "output": {
+    "code": "PARAM_INVALID",
+    "message": "[happyoyster-sdk-demo-python] expire_in_seconds must be an integer between 1 and 1800",
+    "data": {}
+  }
 }
 ```
 
@@ -177,6 +182,8 @@ curl -sS -X POST 'http://127.0.0.1:3000/server-api/worlds' \
   }'
 ```
 
+下文后续请求以 Directing 示例（`mode=2`）为准。若创建 Adventure 或 Acting 世界，请将路由请求头改为对应的 `1` 或 `3`。
+
 Adventure first_frame 示例：
 
 `https://cdn.example.com/*.jpg` 是占位资源地址，直接复制会请求失败；联调时请替换为真实、可公网访问且图片格式正确的素材 URL。
@@ -215,39 +222,34 @@ curl -sS -X POST 'http://127.0.0.1:3000/server-api/worlds' \
   }"
 ```
 
-Adventure scenario_role 示例（不传顶层 `prompt`）：
+Acting first_frame 示例（默认竖屏）：
+
+`https://cdn.example.com/portrait.jpg` 是占位地址，联调时请替换为可访问的竖屏图片 URL。
 
 ```bash
 curl -sS -X POST 'http://127.0.0.1:3000/server-api/worlds' \
   -H 'Content-Type: application/json' \
   -d '{
-    "mode": 1,
+    "mode": 3,
     "async": true,
-    "perspective": "first_person",
-    "uploadMode": "scenario_role",
-    "scenePrompt": "一座漂浮在云端的古城",
-    "rolePrompt": "一只戴着斗篷的牡蛎向导",
-    "sceneImage": {
-      "url": "https://cdn.example.com/scene.jpg",
-      "referenceType": "default"
-    },
-    "roleImage": {
-      "url": "https://cdn.example.com/role.jpg",
-      "referenceType": "default"
-    }
+    "prompt": "牡蛎向导欢迎来访者",
+    "uploadMode": "first_frame",
+    "aspectRatio": "9:16",
+    "firstFrameImage": {"url": "https://cdn.example.com/portrait.jpg"}
   }'
 ```
 
 主要入参：
 
-- `mode`：必填，`1=adventure`，`2=directing`。
+- `mode`：必填，`1=adventure`，`2=directing`，`3=acting`。
 - `async`：可选，默认 `true`；`false` 会同步等待，最长可能到 120 秒。
-- `prompt`：first_frame / Directing simple 必填；scenario_role 不需要顶层 `prompt`，但至少填写 `scenePrompt` / `rolePrompt` 之一，或同时提供 `sceneImage` 与 `roleImage`（各含 `url` 或 `base64` 之一）。
+- `prompt`：Adventure / Acting 的 first_frame 和 Directing simple 必填；ScriptList 使用 `scriptList.synopsis`。
 - `eventStyle`：可选，`normal` / `dramatic`。
 - `refWorldId`：可选，参考模板世界加密 ID。
-- Adventure：`perspective` 必填；`uploadMode` 可选，默认 `first_frame`；`firstFrameImage`、`sceneImage`、`roleImage`、`scenePrompt`、`rolePrompt` 按上传模式条件传入。
-- Directing：`resolution` 必填；`layout`、`narrative`、`firstFrameImage`、`inputImages` 可选。
-- 图片对象：`firstFrameImage`、`sceneImage`、`roleImage`、`inputImages[]`、`scriptList.subjects[].refImage` 均支持 `url` 或 `base64` 二选一；裸 base64 和 `data:image/png;base64,...` data URI 都必须成功。JPG/JPEG/PNG/WebP 单张严格小于 30MB，最大 4096×4096 像素；首帧宽高比必须在闭区间 `1.5..2.0`，其它参考图不要求该比例。
+- Adventure：`perspective` 和 `firstFrameImage` 必填；`uploadMode` 缺省为 `first_frame`，也只支持此值。
+- Acting：`firstFrameImage` 必填；`aspectRatio` 缺省 `9:16`，也可传 `16:9` 并提供匹配画幅的图片。
+- Directing：`resolution` 缺省 `480p`；`layout`、`narrative`、`firstFrameImage`、`inputImages` 可选。
+- 图片对象：`firstFrameImage`、`inputImages[]`、`scriptList.subjects[].refImage` 使用 HTTP(S) `url` 或裸字符串/data URI `base64` 二选一。JPG/JPEG/PNG/WebP 单张严格小于 30MB、至多 4096×4096 像素；Adventure / Directing 首帧宽高比为 `1.5..2.0`，Acting 按所选竖屏或横屏画幅校验。
 - ScriptList 创建和 `update-script` 都要求恰好 45 条 acts，turn 从 1 到 45 按顺序连续且不可重复。逐项断言完整 schema：创建必填 `synopsis`；subjects 最多 6 个且 label/type/各文本长度合法；content 单条最多 2000、合计最多 100000；`cameraType`、`shotSize`、`cut` 只能使用文档列出的枚举。
 
 创建接口必须补测参数错误统一响应：非 `application/json` Content-Type、畸形 JSON、非法枚举、图片超限或格式/比例错误都应为 HTTP `200`，且业务信封 `output.code=400000`，不能断言 HTTP `400` / `415`。
@@ -273,7 +275,8 @@ GET /server-api/worlds/build-status
 示例：
 
 ```bash
-curl -sS "http://127.0.0.1:3000/server-api/worlds/build-status?encryptedWorldId=$WORLD_ID"
+curl -sS "http://127.0.0.1:3000/server-api/worlds/build-status?encryptedWorldId=$WORLD_ID" \
+  -H 'X-Happy-Oyster-Mode: 2'
 ```
 
 入参 Query：
@@ -302,7 +305,8 @@ GET /server-api/worlds/detail
 示例：
 
 ```bash
-curl -sS "http://127.0.0.1:3000/server-api/worlds/detail?encryptedWorldId=$WORLD_ID"
+curl -sS "http://127.0.0.1:3000/server-api/worlds/detail?encryptedWorldId=$WORLD_ID" \
+  -H 'X-Happy-Oyster-Mode: 2'
 ```
 
 入参 Query：
@@ -351,6 +355,7 @@ POST /server-api/travel-credential
 
 ```bash
 curl -sS -X POST 'http://127.0.0.1:3000/server-api/travel-credential' \
+  -H 'X-Happy-Oyster-Mode: 2' \
   -H 'Content-Type: application/json' \
   -d "{\"encryptedWorldId\":\"$WORLD_ID\"}"
 ```
@@ -383,6 +388,7 @@ POST /server-api/travels/update-script
 
 ```bash
 curl -sS -X POST 'http://127.0.0.1:3000/server-api/travels/update-script' \
+  -H 'X-Happy-Oyster-Mode: 2' \
   -H 'Content-Type: application/json' \
   -d @scriptlist-update.json
 ```
@@ -422,7 +428,7 @@ GET /server-api/worlds
 示例：
 
 ```bash
-curl -sS 'http://127.0.0.1:3000/server-api/worlds?page=1&pageSize=20'
+curl -sS 'http://127.0.0.1:3000/server-api/worlds?page=1&pageSize=20&mode=2'
 curl -sS 'http://127.0.0.1:3000/server-api/worlds?page=1&pageSize=20&status=ready&mode=2'
 ```
 
@@ -431,7 +437,7 @@ curl -sS 'http://127.0.0.1:3000/server-api/worlds?page=1&pageSize=20&status=read
 - `page`：可选，默认 `1`。
 - `pageSize`：可选，默认 `20`，最大 `100`。
 - `status`：可选，`ready` / `failed` / `generating`。
-- `mode`：可选，`1=adventure`，`2=directing`。
+- `mode`：用于选择 App；未传 `X-Happy-Oyster-Mode` 时必填。`1=adventure`，`2=directing`，`3=acting`。
 
 成功后重点看：
 
@@ -465,8 +471,10 @@ GET /server-api/travels
 示例：
 
 ```bash
-curl -sS 'http://127.0.0.1:3000/server-api/travels?page=1&pageSize=20'
-curl -sS "http://127.0.0.1:3000/server-api/travels?page=1&pageSize=20&encryptedWorldId=$WORLD_ID"
+curl -sS 'http://127.0.0.1:3000/server-api/travels?page=1&pageSize=20' \
+  -H 'X-Happy-Oyster-Mode: 2'
+curl -sS "http://127.0.0.1:3000/server-api/travels?page=1&pageSize=20&encryptedWorldId=$WORLD_ID" \
+  -H 'X-Happy-Oyster-Mode: 2'
 ```
 
 入参 Query：
@@ -506,7 +514,8 @@ GET /server-api/travels/artifacts
 示例：
 
 ```bash
-curl -sS "http://127.0.0.1:3000/server-api/travels/artifacts?encryptedTravelId=$TRAVEL_ID"
+curl -sS "http://127.0.0.1:3000/server-api/travels/artifacts?encryptedTravelId=$TRAVEL_ID" \
+  -H 'X-Happy-Oyster-Mode: 2'
 ```
 
 入参 Query：
@@ -544,6 +553,7 @@ POST /server-api/worlds/delete
 
 ```bash
 curl -sS -X POST 'http://127.0.0.1:3000/server-api/worlds/delete' \
+  -H 'X-Happy-Oyster-Mode: 2' \
   -H 'Content-Type: application/json' \
   -d "{\"encryptedWorldId\":\"$WORLD_ID\"}"
 ```

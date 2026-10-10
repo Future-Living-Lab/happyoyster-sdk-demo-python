@@ -27,7 +27,7 @@ export DASHSCOPE_API_KEY='sk-...'
 python3 server.py
 ```
 
-`BAILIAN_API_HOST` 从百炼控制台 API Key 页的“API Host”获取，例如 `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`。本 demo 内部会补全固定网关路径 `https://{BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0`。
+`BAILIAN_API_HOST` 从百炼控制台 API Key 页的“API Host”获取，例如 `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`。本 demo 按 `mode` 选择固定线上 App ID：`1=adventure`、`2=directing`、`3=acting`，再拼接 `https://{BAILIAN_API_HOST}/api/v2/apps/{APP_ID}`。World 创建和列表从 body/query 读取 `mode`；其他接口通过 `X-Happy-Oyster-Mode: 1|2|3` 指定。此请求头不会转发给上游。这里只支持上述正式版 App ID。
 
 API Host 必须与同一账号、同一地域的 API Key 配套使用，否则网关可能返回 `AccessDenied` 或 `401`；各地域 API Key 相互独立，不能跨地域使用。
 
@@ -60,21 +60,26 @@ API Host 必须与同一账号、同一地域的 API Key 配套使用，否则�
 
 ```json
 {
-  "success": false,
-  "errorCode": "UPSTREAM_ERROR",
-  "message": "Upstream OpenAPI request failed"
+  "request_id": "随机 UUID",
+  "output": {
+    "code": "UPSTREAM_ERROR",
+    "message": "[happyoyster-sdk-demo-python] Upstream OpenAPI request failed",
+    "data": {}
+  }
 }
 ```
+
+本地错误统一返回 HTTP `200`，`output.code` 为字符串，`output.message` 带 `[happyoyster-sdk-demo-python]` 前缀；上游响应保持原样。
 
 ### 1.4 通用枚举
 
 | 枚举        | 取值                                                                                 |
 | ----------- | ------------------------------------------------------------------------------------ |
-| `mode`      | `1 = adventure`，`2 = directing`                                                            |
+| `mode`      | `1 = adventure`，`2 = directing`，`3 = acting`                                                            |
 | 世界状态    | `generating` / `ready` / `failed`                                                    |
 | Travel 状态 | `init` / `pending` / `running` / `completed` / `failed`；`pause` 响应会返回 `paused` |
 
-`mode` 必须使用数值，不要传字符串 `adventure` / `directing`。
+`mode` 必须使用数值，不要传字符串 `adventure` / `directing` / `acting`。
 
 ### 1.5 当前用户模型
 
@@ -151,9 +156,12 @@ Query 和 Body 同时存在时，优先使用 Query。
 
 ```json
 {
-  "success": false,
-  "errorCode": "PARAM_INVALID",
-  "message": "expire_in_seconds must be an integer between 1 and 1800"
+  "request_id": "随机 UUID",
+  "output": {
+    "code": "PARAM_INVALID",
+    "message": "[happyoyster-sdk-demo-python] expire_in_seconds must be an integer between 1 and 1800",
+    "data": {}
+  }
 }
 ```
 
@@ -167,30 +175,27 @@ Query 和 Body 同时存在时，优先使用 Query。
 
 | 字段              | 类型    | 必填 | 说明                                              |
 | ----------------- | ------- | ---- | ------------------------------------------------- |
-| `mode`            | integer | 是   | `1=adventure`，`2=directing`                             |
+| `mode`            | integer | 是   | `1=adventure`，`2=directing`，`3=acting`                             |
 | `async`           | boolean | 否   | 默认 `true`；`false` 同步等待，容易被网关超时打断 |
 | `creationModel`   | string  | 否   | `simple`（默认）/ `scriptlist`；仅 `mode=2` 有效  |
-| `prompt`          | string  | 条件 | 世界主题描述；first_frame / Directing simple 必填，scenario_role 不需要顶层 prompt |
+| `prompt`          | string  | 条件 | Adventure / Acting first_frame 与 Directing simple 必填；ScriptList 不接受 |
 | `eventStyle`      | string  | 否   | `normal` / `dramatic`                             |
 | `refWorldId`      | string  | 否   | 参考模板世界加密 ID                               |
 | `perspective`     | string  | 条件 | Adventure 必填：`first_person` / `third_person`      |
-| `uploadMode`      | string  | 否   | Adventure：`first_frame` / `scenario_role`           |
-| `firstFrameImage` | object  | 否   | Adventure first_frame / Directing simple 首帧图：`{ url 或 base64, referenceType }`，可选；scriptlist 必填 |
-| `sceneImage`      | object  | 否   | Adventure scenario_role：`{ url 或 base64, referenceType }`    |
-| `roleImage`       | object  | 否   | Adventure scenario_role：`{ url 或 base64, referenceType }`    |
-| `scenePrompt`     | string  | 否   | Adventure 场景描述                                   |
-| `rolePrompt`      | string  | 否   | Adventure 角色描述                                   |
-| `resolution`      | string  | 条件 | Directing 必填：`480p` / `720p`                       |
+| `uploadMode`      | string  | 否   | Adventure / Acting：仅 `first_frame` |
+| `aspectRatio` | string | 否 | 仅 Acting：`9:16`（默认）/ `16:9`，图片画幅须匹配 |
+| `firstFrameImage` | object  | 条件   | Adventure / Acting 与 ScriptList 必填；Directing simple 可选：`{ url 或 base64, referenceType }` |
+| `resolution`      | string  | 否 | Directing：`480p`（默认）/ `720p` |
 | `layout`          | string  | 否   | Directing：`Stable` / `Fast`                          |
 | `narrative`       | string  | 否   | Directing：`Calm` / `Dramatic` / `Normal`             |
 | `inputImages`     | array   | 否   | 额外参考图：`[{ url 或 base64, referenceType }]`      |
 | `scriptList`      | object  | 条件 | `creationModel=scriptlist` 时必填                 |
 
-图片引用对象 `firstFrameImage`、`sceneImage`、`roleImage`、`inputImages[]`、`scriptList.subjects[].refImage` 都支持同一结构：`url` 为 HTTP(S) 图片地址，`base64` 同时支持裸 base64 和 `data:image/xxx;base64,...` data URI，`referenceType` 可选且默认 `default`。同一对象内 `url` 与 `base64` 不可同时非空。URL 与 base64 解码后的图片均须为 JPG/JPEG/PNG/WebP，单张严格小于 30MB，解码后最大像素数为 4096×4096；首帧图还须为横屏且宽高比（宽/高）在闭区间 `1.5..2.0`，其它参考图不要求该比例。
+图片引用对象 `firstFrameImage`、`inputImages[]`、`scriptList.subjects[].refImage` 使用 HTTP(S) `url` 或 `base64` 二选一，不能同时提供；`base64` 可用裸字符串或 `data:image/xxx;base64,...`。`referenceType` 可选，默认 `default`。解码后的 JPG/JPEG/PNG/WebP 图片单张严格小于 30MB、至多 4096×4096 像素；Adventure / Directing 首帧宽高比须为 `1.5..2.0`，Acting 首帧须匹配 `aspectRatio`（默认 `9:16`，也可为 `16:9`）。Demo 会原样转发图片 data URI，包括其中声明的 MIME 类型。
 
-`prompt` 为空、空串或纯空白都会被上游视为缺失。默认 `first_frame` 和 Directing simple 创建必须传非空 `prompt`；`scenario_role` 不要求顶层 `prompt`，但至少需要 `scenePrompt` / `rolePrompt` 任意一个非空，或同时提供 `sceneImage` 与 `roleImage`（各含 `url` 或 `base64` 之一）。
+`prompt` 为空或纯空白会被上游视为缺失。Adventure / Acting 的 first_frame 和 Directing simple 必须传非空 `prompt`；ScriptList 创建使用 `scriptList.synopsis`。
 
-`creationModel=scriptlist` 时仅用于 Directing 世界，需传 `resolution`、`firstFrameImage`（含 `url` 或 `base64` 之一）和 `scriptList`，不接受 `prompt`、`layout`、`narrative`、`inputImages`、`perspective`、`uploadMode`、`sceneImage`、`roleImage`、`scenePrompt`、`rolePrompt` 等字段。创建和 `update-script` 都要求 `scriptList.acts` 恰好 45 条，turn 按数组顺序覆盖 1 到 45、连续且不可重复。
+`creationModel=scriptlist` 时仅用于 Directing 世界，需传 `firstFrameImage`（含 `url` 或 `base64` 之一）和 `scriptList`，不接受 `prompt`、`layout`、`narrative`、`inputImages`、`perspective`、`uploadMode`、`sceneImage`、`roleImage`、`scenePrompt`、`rolePrompt` 等字段。创建和 `update-script` 都要求 `scriptList.acts` 恰好 45 条，turn 按数组顺序覆盖 1 到 45、连续且不可重复。
 
 ScriptList 完整 schema：`synopsis`（创建必填，最长 2000）、`videoTitle`（128）、`scene` / `style` / `speed` / `language`（各 64）、`setting`（2000）、`soundtrack`（500）、`prologue`（1000）、`videoTags`（最多 20 个、每个 32）、`subjects`（最多 6 个）和 `acts`。`subjects[]` 支持 `label`（`[character_1]` 到 `[character_6]`，可省略自动补齐且不可重复）、`name`、`type`（`character` / `animal` / `creature` / `narrator`）、`refImage`、`gender`、`position`、`ethnicity`、`age`、`appearance`、`voice`；其中 name/gender/position/ethnicity/age 各最长 64，appearance 最长 500，voice 最长 200。`acts[]` 支持 `turn`、`content`、`cameraType`、`shotSize`、`cut`；content 必填且单条最长 2000、45 条合计最长 100000，主体引用必须匹配已定义 label。
 
@@ -226,7 +231,7 @@ ScriptList 完整 schema：`synopsis`（创建必填，最长 2000）、`videoTi
 | `status`           | string       | `generating` / `ready` / `failed`          |
 | `firstFrame`       | string/null  | 首帧图地址                                 |
 | `name`             | string/null  | 世界名称，通常 `ready` 后返回              |
-| `mode`             | integer/null | `1=adventure`，`2=directing`，通常 `ready` 后返回 |
+| `mode`             | integer/null | `1=adventure`，`2=directing`，`3=acting`，通常 `ready` 后返回 |
 
 ### 4. 查询世界详情
 
@@ -247,20 +252,20 @@ ScriptList 完整 schema：`synopsis`（创建必填，最长 2000）、`videoTi
 | `encryptedWorldId` | string      | 加密世界 ID                 |
 | `name`             | string      | 世界名称                    |
 | `status`           | string      | 世界状态                    |
-| `mode`             | integer     | `1=adventure`，`2=directing`       |
+| `mode`             | integer     | `1=adventure`，`2=directing`，`3=acting`       |
 | `prompt`           | string/null | 创建时的主题描述            |
 | `creationModel`    | string      | `simple` / `scriptlist`     |
 | `previewUrl`       | string/null | 世界预览地址                |
 | `eventStyle`       | string/null | `normal` / `dramatic`       |
 | `perspective`      | string/null | `first_person` / `third_person` |
-| `uploadMode`       | string/null | `first_frame` / `scenario_role` |
+| `uploadMode`       | string/null | `first_frame`（历史记录可能为 `scenario_role`） |
+| `aspectRatio` | string/null | Acting：`9:16` / `16:9` |
 | `resolution`       | string/null | `480p` / `720p`             |
 | `layout`           | string/null | 运镜风格                    |
 | `narrative`        | string/null | 叙事风格                    |
 | `refWorldId`       | string/null | 参考模板世界加密 ID         |
 | `firstFrameImage` / `sceneImage` / `roleImage` | object/null | 图片 URL / referenceType 回显 |
 | `inputImages`      | array       | 额外参考图回显              |
-| `scenePrompt` / `rolePrompt` | string/null | 场景 / 角色描述      |
 | `scriptList`       | object/null | ScriptList 世界返回完整结构 |
 | `createdAt`        | string      | 创建时间                    |
 | `updatedAt`        | string      | 更新时间                    |
@@ -302,7 +307,9 @@ ticket 只能消费一次；客户端刷新临时 API Key 时无需重新换 tic
 | `page`     | integer | 否   | 默认 `1`                          |
 | `pageSize` | integer | 否   | 默认 `20`，最大 `100`             |
 | `status`   | string  | 否   | `ready` / `failed` / `generating` |
-| `mode`     | integer | 否   | `1=adventure`，`2=directing`             |
+| `mode`     | integer | 条件 | 用于选择 App；未传 `X-Happy-Oyster-Mode` 时必填。`1=adventure`，`2=directing`，`3=acting` |
+
+每次调用只查询一个模式；如需合并列表，请分别查询模式 1、2、3。
 
 响应 `output.data`：
 
@@ -318,10 +325,11 @@ ticket 只能消费一次；客户端刷新临时 API Key 时无需重新换 tic
 | `encryptedWorldId` | string      | 加密世界 ID                 |
 | `name`             | string      | 世界名称                    |
 | `status`           | string      | 世界状态                    |
-| `mode`             | integer     | `1=adventure`，`2=directing`       |
+| `mode`             | integer     | `1=adventure`，`2=directing`，`3=acting`       |
 | `perspective`      | string/null | `first_person` / `third_person` |
 | `creationModel`    | string      | `simple` / `scriptlist` |
-| `uploadMode`       | string/null | `first_frame` / `scenario_role` |
+| `uploadMode`       | string/null | `first_frame`（历史记录可能为 `scenario_role`） |
+| `aspectRatio` | string/null | Acting：`9:16` / `16:9` |
 | `createdAt`        | string      | 创建时间                    |
 
 `pagination`：
@@ -361,7 +369,7 @@ ticket 只能消费一次；客户端刷新临时 API Key 时无需重新换 tic
 | ------------------- | ------------ | --------------------- |
 | `encryptedTravelId` | string       | 加密 Travel ID        |
 | `status`            | string       | Travel 状态           |
-| `mode`              | integer      | `1=adventure`，`2=directing` |
+| `mode`              | integer      | `1=adventure`，`2=directing`，`3=acting` |
 | `encryptedWorldId`  | string       | 加密世界 ID           |
 | `durationSec`       | integer/null | 时长秒数              |
 | `createdAt`         | string       | 创建时间              |

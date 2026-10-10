@@ -17,7 +17,7 @@ export DASHSCOPE_API_KEY='sk-...'
 python3 server.py
 ```
 
-`BAILIAN_API_HOST` is obtained from the "API Host" field on the API Key page of the Bailian console, for example `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`. This demo completes the fixed gateway path internally as `https://{BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0`.
+`BAILIAN_API_HOST` is obtained from the "API Host" field on the API Key page of the Bailian console, for example `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`. This demo selects the fixed online App ID by mode (`1=adventure`, `2=directing`, `3=acting`) and builds `https://{BAILIAN_API_HOST}/api/v2/apps/{APP_ID}`.
 
 The API Host must be used with an API Key from the same account and region; otherwise the gateway may return `AccessDenied` or `401`. API Keys are region-specific and cannot be used across regions.
 
@@ -70,13 +70,15 @@ http://192.168.1.23:3100/server-api
 
 This is the phone accessing the computer's Python demo directly; no proxy needs to be configured in the phone's Wi-Fi settings. A proxy tool is only needed when you want to forward the online domain the App originally accesses to the computer for packet capture or a local service. If the address is not reachable, check the macOS firewall, that both devices are on the same LAN, and guest network isolation.
 
+World creation and list requests read `mode` from the body/query. For follow-up requests, send `X-Happy-Oyster-Mode: 1|2|3` matching the World mode.
+
 Common response conventions:
 
 - Except for `POST /server-api/temp-api-key`, business responses are wrapped in `output`.
 - Success check: `output.code == 0`.
 - Business data: read `output.data`.
 - If a top-level string `code` is returned, treat it as a proxy or gateway-layer error.
-- `mode` uses numeric values: `1=adventure`, `2=directing`; do not pass strings.
+- `mode` uses numeric values: `1=adventure`, `2=directing`, `3=acting`; do not pass strings.
 - Do not pass `userAgent` in GET query strings or World POST bodies; if you need to identify the client, use the HTTP `User-Agent` header.
 - The current demo demonstrates a single-user / single main API Key scenario and does not implement business-level user isolation.
 - When Bailian injects a workspace, Worlds and Travels are isolated by `uid + workspace`. Assert `403001` for a cross-workspace World and `404000` for a cross-workspace Travel. Do not construct `x-dashscope-*` / `X-Ho-*` headers yourself.
@@ -135,9 +137,12 @@ Local parameter error response:
 
 ```json
 {
-  "success": false,
-  "errorCode": "PARAM_INVALID",
-  "message": "expire_in_seconds must be an integer between 1 and 1800"
+  "request_id": "random UUID",
+  "output": {
+    "code": "PARAM_INVALID",
+    "message": "[happyoyster-sdk-demo-python] expire_in_seconds must be an integer between 1 and 1800",
+    "data": {}
+  }
 }
 ```
 
@@ -177,6 +182,8 @@ curl -sS -X POST 'http://127.0.0.1:3000/server-api/worlds' \
   }'
 ```
 
+The follow-up commands below use the Directing example (`mode=2`). If you create an Adventure or Acting world, change the routing header to `1` or `3` accordingly.
+
 Adventure first_frame example:
 
 `https://cdn.example.com/*.jpg` is a placeholder resource URL and will fail if copied as-is. For integration testing, replace it with a real, publicly accessible image URL in the expected format.
@@ -215,39 +222,34 @@ curl -sS -X POST 'http://127.0.0.1:3000/server-api/worlds' \
   }"
 ```
 
-Adventure scenario_role example (no top-level `prompt`):
+Acting first_frame example (portrait image by default):
+
+`https://cdn.example.com/portrait.jpg` is a placeholder. Replace it with an accessible portrait image URL.
 
 ```bash
 curl -sS -X POST 'http://127.0.0.1:3000/server-api/worlds' \
   -H 'Content-Type: application/json' \
   -d '{
-    "mode": 1,
+    "mode": 3,
     "async": true,
-    "perspective": "first_person",
-    "uploadMode": "scenario_role",
-    "scenePrompt": "An ancient city floating above the clouds",
-    "rolePrompt": "An oyster guide wearing a cloak",
-    "sceneImage": {
-      "url": "https://cdn.example.com/scene.jpg",
-      "referenceType": "default"
-    },
-    "roleImage": {
-      "url": "https://cdn.example.com/role.jpg",
-      "referenceType": "default"
-    }
+    "prompt": "An oyster guide welcomes visitors",
+    "uploadMode": "first_frame",
+    "aspectRatio": "9:16",
+    "firstFrameImage": {"url": "https://cdn.example.com/portrait.jpg"}
   }'
 ```
 
 Main request parameters:
 
-- `mode`: required, `1=adventure`, `2=directing`.
+- `mode`: required, `1=adventure`, `2=directing`, `3=acting`.
 - `async`: optional, defaults to `true`; `false` waits synchronously, which can take up to 120 seconds.
-- `prompt`: required for first_frame / Directing simple; scenario_role does not need a top-level `prompt`, but at least one of `scenePrompt` / `rolePrompt` must be provided, or both `sceneImage` and `roleImage` must be provided, each containing either `url` or `base64`.
+- `prompt`: required for Adventure / Acting first_frame and Directing simple; ScriptList uses `scriptList.synopsis` instead.
 - `eventStyle`: optional, `normal` / `dramatic`.
 - `refWorldId`: optional, encrypted ID of a reference template world.
-- Adventure: `perspective` is required; `uploadMode` is optional and defaults to `first_frame`; `firstFrameImage`, `sceneImage`, `roleImage`, `scenePrompt`, and `rolePrompt` are passed conditionally depending on the upload mode.
-- Directing: `resolution` is required; `layout`, `narrative`, `firstFrameImage`, and `inputImages` are optional.
-- Image objects: `firstFrameImage`, `sceneImage`, `roleImage`, `inputImages[]`, and `scriptList.subjects[].refImage` all support either `url` or `base64`. Both raw base64 and a `data:image/png;base64,...` data URI must succeed. JPG/JPEG/PNG/WebP images must each be strictly smaller than 30 MB and at most 4096×4096 pixels. First-frame aspect ratio must be in the inclusive range `1.5..2.0`; other reference images do not have this ratio requirement.
+- Adventure: `perspective` and `firstFrameImage` are required; `uploadMode` defaults to `first_frame` and only accepts that value.
+- Acting: `firstFrameImage` is required; `aspectRatio` defaults to `9:16` and may be `16:9` with a matching image.
+- Directing: `resolution` defaults to `480p`; `layout`, `narrative`, `firstFrameImage`, and `inputImages` are optional.
+- Image objects: `firstFrameImage`, `inputImages[]`, and `scriptList.subjects[].refImage` use either an HTTP(S) `url` or raw/data-URI `base64`, but not both. JPG/JPEG/PNG/WebP images must be strictly smaller than 30 MB and at most 4096×4096 pixels. Adventure / Directing first frames require a landscape ratio of `1.5..2.0`; Acting uses the requested portrait or landscape ratio.
 - ScriptList creation and `update-script` both require exactly 45 acts, ordered as continuous, non-duplicate turns 1 through 45. Assert the complete schema: `synopsis` is required on create; subjects are limited to 6 with valid labels, types, and text lengths; content is limited to 2,000 characters per act and 100,000 total; and `cameraType`, `shotSize`, and `cut` use only the documented enums.
 
 Also test the unified creation error response: non-`application/json` Content-Type, malformed JSON, invalid enums, and invalid image size / format / ratio must all return HTTP `200` with `output.code=400000`, not HTTP `400` / `415`.
@@ -273,7 +275,8 @@ GET /server-api/worlds/build-status
 Example:
 
 ```bash
-curl -sS "http://127.0.0.1:3000/server-api/worlds/build-status?encryptedWorldId=$WORLD_ID"
+curl -sS "http://127.0.0.1:3000/server-api/worlds/build-status?encryptedWorldId=$WORLD_ID" \
+  -H 'X-Happy-Oyster-Mode: 2'
 ```
 
 Query parameters:
@@ -302,7 +305,8 @@ GET /server-api/worlds/detail
 Example:
 
 ```bash
-curl -sS "http://127.0.0.1:3000/server-api/worlds/detail?encryptedWorldId=$WORLD_ID"
+curl -sS "http://127.0.0.1:3000/server-api/worlds/detail?encryptedWorldId=$WORLD_ID" \
+  -H 'X-Happy-Oyster-Mode: 2'
 ```
 
 Query parameters:
@@ -351,6 +355,7 @@ Example:
 
 ```bash
 curl -sS -X POST 'http://127.0.0.1:3000/server-api/travel-credential' \
+  -H 'X-Happy-Oyster-Mode: 2' \
   -H 'Content-Type: application/json' \
   -d "{\"encryptedWorldId\":\"$WORLD_ID\"}"
 ```
@@ -383,6 +388,7 @@ Example:
 
 ```bash
 curl -sS -X POST 'http://127.0.0.1:3000/server-api/travels/update-script' \
+  -H 'X-Happy-Oyster-Mode: 2' \
   -H 'Content-Type: application/json' \
   -d @scriptlist-update.json
 ```
@@ -422,7 +428,7 @@ GET /server-api/worlds
 Example:
 
 ```bash
-curl -sS 'http://127.0.0.1:3000/server-api/worlds?page=1&pageSize=20'
+curl -sS 'http://127.0.0.1:3000/server-api/worlds?page=1&pageSize=20&mode=2'
 curl -sS 'http://127.0.0.1:3000/server-api/worlds?page=1&pageSize=20&status=ready&mode=2'
 ```
 
@@ -431,7 +437,7 @@ Query parameters:
 - `page`: optional, defaults to `1`.
 - `pageSize`: optional, defaults to `20`, maximum `100`.
 - `status`: optional, `ready` / `failed` / `generating`.
-- `mode`: optional, `1=adventure`, `2=directing`.
+- `mode`: selects the app; required when `X-Happy-Oyster-Mode` is absent. `1=adventure`, `2=directing`, `3=acting`.
 
 Key fields to check on success:
 
@@ -465,8 +471,10 @@ GET /server-api/travels
 Example:
 
 ```bash
-curl -sS 'http://127.0.0.1:3000/server-api/travels?page=1&pageSize=20'
-curl -sS "http://127.0.0.1:3000/server-api/travels?page=1&pageSize=20&encryptedWorldId=$WORLD_ID"
+curl -sS 'http://127.0.0.1:3000/server-api/travels?page=1&pageSize=20' \
+  -H 'X-Happy-Oyster-Mode: 2'
+curl -sS "http://127.0.0.1:3000/server-api/travels?page=1&pageSize=20&encryptedWorldId=$WORLD_ID" \
+  -H 'X-Happy-Oyster-Mode: 2'
 ```
 
 Query parameters:
@@ -506,7 +514,8 @@ GET /server-api/travels/artifacts
 Example:
 
 ```bash
-curl -sS "http://127.0.0.1:3000/server-api/travels/artifacts?encryptedTravelId=$TRAVEL_ID"
+curl -sS "http://127.0.0.1:3000/server-api/travels/artifacts?encryptedTravelId=$TRAVEL_ID" \
+  -H 'X-Happy-Oyster-Mode: 2'
 ```
 
 Query parameters:
@@ -544,6 +553,7 @@ Example:
 
 ```bash
 curl -sS -X POST 'http://127.0.0.1:3000/server-api/worlds/delete' \
+  -H 'X-Happy-Oyster-Mode: 2' \
   -H 'Content-Type: application/json' \
   -d "{\"encryptedWorldId\":\"$WORLD_ID\"}"
 ```

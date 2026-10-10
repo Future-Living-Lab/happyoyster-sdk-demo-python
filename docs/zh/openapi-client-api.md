@@ -26,11 +26,12 @@ SDK 只面向百炼 app 网关公网业务地址调用。百炼网关鉴权后�
 
 | 项               | 值                                                                                          |
 | ---------------- | ------------------------------------------------------------------------------------------- |
+| App ID          | 模式 `1/2/3` 选择 `happyoyster-1.0-adventure` / `happyoyster-1.0-directing` / `happyoyster-1.0-acting` |
 | API Host        | `${BAILIAN_API_HOST}`，百炼 API Host（裸 host，不含 scheme 和 path）              |
-| 完整地址示例     | `https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0/openapi/v1/worlds`       |
+| 完整地址示例     | `https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds`       |
 | 鉴权             | `Authorization: Bearer ${API_KEY}`；支持的 SDK 运行态接口用临时 Key，管理类 / 仅服务端接口用主 Key |
 
-`BAILIAN_API_HOST` 从百炼控制台 API Key 页的“API Host”获取，例如 `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`。完整 OpenAPI 网关地址由固定路径派生：`https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0`。
+`BAILIAN_API_HOST` 从百炼控制台 API Key 页的“API Host”获取，例如 `llm-<your-workspace-id>.cn-beijing.maas.aliyuncs.com`。完整 OpenAPI 网关地址为 `https://${BAILIAN_API_HOST}/api/v2/apps/{APP_ID}`；模式 1/2/3 分别选择 Adventure / Directing / Acting App ID。
 
 API Host 必须与同一账号、同一地域的 API Key 配套使用，否则网关可能返回 `AccessDenied` 或 `401`；各地域 API Key 相互独立，不能跨地域使用。
 
@@ -55,7 +56,7 @@ SDK 不要也不能自带 `x-dashscope-*` / `X-Ho-*` 网关注入头。本 demo 
 
 ### 3.1 请求
 
-- Path：接口路径直接拼到派生出的 OpenAPI 网关地址后。例：`GET /openapi/v1/worlds` -> `GET https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0/openapi/v1/worlds`。
+- Path：先按 mode 选择 App ID，再拼接接口路径。例：`GET /openapi/v1/worlds` -> `GET https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds`。
 - Query：原样透传，直接拼 URL。
 - Body：`POST` / `PUT` / `PATCH` 的 JSON body 即业务 body；`GET` / `DELETE` 无 body。
 
@@ -127,7 +128,7 @@ World ID / Travel ID 对外为加密串：
 
 | 枚举        | 取值                                                    |
 | ----------- | ------------------------------------------------------- |
-| mode 类型码 | `1 = adventure`，`2 = directing`                               |
+| mode 类型码 | `1 = adventure`，`2 = directing`，`3 = acting`                               |
 | 世界状态    | `generating` / `ready` / `failed`                       |
 | Travel 状态    | `init` / `pending` / `running` / `completed` / `failed` |
 
@@ -208,7 +209,7 @@ curl -sS -X POST 'http://127.0.0.1:3000/server-api/temp-api-key?expire_in_second
 
 ## 五、业务接口清单
 
-实际地址 = `https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0` + endpoint path（例如 `/openapi/v1/worlds`）。
+实际地址 = `https://${BAILIAN_API_HOST}/api/v2/apps/{APP_ID}` + endpoint path（例如 `/openapi/v1/worlds`），由 mode 选择 App ID。
 
 | #   | 接口             | Method | Path                                       | 需主 Key |
 | --- | ---------------- | ------ | ------------------------------------------ | -------- |
@@ -256,28 +257,27 @@ curl -sS -X POST 'http://127.0.0.1:3000/server-api/temp-api-key?expire_in_second
 
 | 字段                         | 类型    | 必填 | 说明                                           |
 | ---------------------------- | ------- | ---- | ---------------------------------------------- |
-| `mode`                       | integer | 是   | `1=adventure`，`2=directing`                          |
+| `mode`                       | integer | 是   | `1=adventure`，`2=directing`，`3=acting`                          |
 | `async`                      | boolean | 否   | 默认 `true`；`false` 同步等待                  |
 | `creationModel`              | string  | 否   | `simple`（默认）/ `scriptlist`；仅 `mode=2` 有效 |
-| `prompt`                     | string  | 条件 | 世界主题描述；first_frame / Directing simple 必填，scenario_role 不需要顶层 prompt |
+| `prompt`                     | string  | 条件 | Adventure / Acting first_frame 与 Directing simple 必填；ScriptList 不接受 |
 | `eventStyle`                 | string  | 否   | `normal` / `dramatic`                          |
 | `refWorldId`                 | string  | 否   | 参考模板世界加密 ID                            |
 | `perspective`                | string  | 条件 | Adventure 必填：`first_person` / `third_person`   |
-| `uploadMode`                 | string  | 否   | Adventure：`first_frame` / `scenario_role`        |
-| `firstFrameImage`            | object  | 否   | Adventure first_frame / Directing simple 首帧图：`{ url 或 base64, referenceType }`，可选；scriptlist 必填 |
-| `sceneImage` / `roleImage`   | object  | 否   | Adventure scenario_role：`{ url 或 base64, referenceType }` |
-| `scenePrompt` / `rolePrompt` | string  | 否   | Adventure 场景 / 角色描述                         |
-| `resolution`                 | string  | 条件 | Directing 必填：`480p` / `720p`                    |
+| `uploadMode`                 | string  | 否   | Adventure / Acting：仅 `first_frame` |
+| `aspectRatio` | string | 否 | 仅 Acting：`9:16`（默认）/ `16:9`，图片画幅须匹配 |
+| `firstFrameImage`            | object  | 条件   | Adventure / Acting 与 ScriptList 必填；Directing simple 可选：`{ url 或 base64, referenceType }` |
+| `resolution`                 | string  | 否 | Directing：`480p`（默认）/ `720p` |
 | `layout`                     | string  | 否   | Directing：`Stable` / `Fast`                       |
 | `narrative`                  | string  | 否   | Directing：`Calm` / `Dramatic` / `Normal`          |
 | `inputImages`                | array   | 否   | `[{ url 或 base64, referenceType }]`           |
 | `scriptList`                 | object  | 条件 | `creationModel=scriptlist` 时必填              |
 
-图片引用对象 `firstFrameImage`、`sceneImage`、`roleImage`、`inputImages[]`、`scriptList.subjects[].refImage` 共用同一结构：`url` 为 HTTP(S) 图片地址，`base64` 同时支持裸 base64 和 `data:image/xxx;base64,...` data URI，`referenceType` 可选且默认 `default`。同一对象内 `url` 与 `base64` 不可同时非空。URL 与 base64 解码后的图片均须为 JPG/JPEG/PNG/WebP，单张严格小于 30MB，解码后最大像素数为 4096×4096；首帧图还须为横屏且宽高比（宽/高）在闭区间 `1.5..2.0`，其它参考图不要求该比例。
+图片引用对象 `firstFrameImage`、`inputImages[]`、`scriptList.subjects[].refImage` 使用 HTTP(S) `url` 或 `base64` 二选一，不能同时提供；`base64` 可用裸字符串或 `data:image/xxx;base64,...`。`referenceType` 可选，默认 `default`。解码后的 JPG/JPEG/PNG/WebP 图片单张严格小于 30MB、至多 4096×4096 像素；Adventure / Directing 首帧宽高比须为 `1.5..2.0`，Acting 首帧须匹配 `aspectRatio`（默认 `9:16`，也可为 `16:9`）。
 
-`prompt` 为空、空串或纯空白都会被上游视为缺失。默认 `first_frame` 和 Directing simple 创建必须传非空 `prompt`；`scenario_role` 不要求顶层 `prompt`，但至少需要 `scenePrompt` / `rolePrompt` 任意一个非空，或同时提供 `sceneImage` 与 `roleImage`（各含 `url` 或 `base64` 之一）。
+`prompt` 为空或纯空白会被上游视为缺失。Adventure / Acting 的 first_frame 和 Directing simple 必须传非空 `prompt`；ScriptList 创建使用 `scriptList.synopsis`。
 
-`creationModel=scriptlist` 仅支持 Directing 世界，需传 `resolution`、`firstFrameImage`（含 `url` 或 `base64` 之一）和 `scriptList`，不接受 `prompt`、`layout`、`narrative`、`inputImages`、`perspective`、`uploadMode`、`sceneImage`、`roleImage`、`scenePrompt`、`rolePrompt` 等 prompt / Adventure 字段。创建和运行中 `update-script` 都要求 `scriptList.acts` 恰好 45 条，turn 按数组顺序覆盖 1 到 45、连续且不可重复。
+`creationModel=scriptlist` 仅支持 Directing 世界，需传 `firstFrameImage`（含 `url` 或 `base64` 之一）和 `scriptList`，不接受 `prompt`、`layout`、`narrative`、`inputImages`、`perspective`、`uploadMode`、`sceneImage`、`roleImage`、`scenePrompt`、`rolePrompt` 等 prompt / Adventure 字段。创建和运行中 `update-script` 都要求 `scriptList.acts` 恰好 45 条，turn 按数组顺序覆盖 1 到 45、连续且不可重复。
 
 ScriptList 完整 schema 和约束：
 
@@ -317,7 +317,7 @@ Query：`page`、`pageSize`、`status`、`mode`。
 - `page` 默认 `1`
 - `pageSize` 默认 `20`，最大 `100`
 - `status`: `ready` / `failed` / `generating`
-- `mode`: integer，`1=adventure`，`2=directing`
+- `mode`: integer，`1=adventure`，`2=directing`，`3=acting`
 
 响应 data：`items[]` + `pagination`。
 
@@ -461,7 +461,7 @@ Query：`encryptedTravelId` 必填。
 ## 七、当前限制 / 注意
 
 1. Query 参数为驼峰。后端读取 `pageSize`、`encryptedWorldId` 等；百炼原样透传 query，`page_size` 等下划线写法会被忽略或走默认值。
-2. `mode` 是数值类型码，`1=adventure`、`2=directing`。创建、列表过滤和响应都用数值，勿传旧版字符串。
+2. `mode` 是数值类型码，`1=adventure`、`2=directing`、`3=acting`。创建、列表过滤和响应都用数值，勿传旧版字符串。
 3. 客户端开始体验后要以 `noStreamAutoEndTimeoutSec` 为上限监控推流状态；超时未见推流态（如 `PUSHING`）时调用 `/openapi/v1/travels/end` 并传 `failCode=TRAVEL_NO_STREAM_AUTO_END`。
 4. GET 接口不支持 Query 参数 `userAgent`；World 接口也不读取 body `userAgent`。请用 HTTP `User-Agent` Header 作为客户端标识。
 5. 部分服务端链路耗时头不会透传到 SDK，例如 `X-WorldModel-Request-Received-At-Ms` 与 `X-WorldModel-Request-Completed-At-Ms`。
@@ -472,7 +472,7 @@ Query：`encryptedTravelId` 必填。
 ### 8.1 GET 世界列表
 
 ```bash
-curl --location "https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0/openapi/v1/worlds?page=1&pageSize=10" \
+curl --location "https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds?page=1&pageSize=10&mode=2" \
   --header 'Authorization: Bearer ${DASHSCOPE_API_KEY}'
 ```
 
@@ -498,7 +498,7 @@ curl --location "https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0/openapi
 ### 8.2 POST 创建世界
 
 ```bash
-curl --location "https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0/openapi/v1/worlds" \
+curl --location "https://${BAILIAN_API_HOST}/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds" \
   --header 'Content-Type: application/json' \
   --header 'Authorization: Bearer ${DASHSCOPE_API_KEY}' \
   --data '{

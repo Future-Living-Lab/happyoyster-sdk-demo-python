@@ -12,6 +12,7 @@ def _build_openapi_path(path):
 
 def _build_headers(proxy_request, config):
     headers = copy_forwardable_headers(proxy_request.headers)
+    headers.pop("x-happy-oyster-mode", None)
 
     headers["authorization"] = f"Bearer {config.dashscope_api_key}"
     headers["accept-encoding"] = "identity"
@@ -27,7 +28,7 @@ def _build_headers(proxy_request, config):
 
 def call_bailian_app(proxy_request, *, config, fetch_impl=None):
     return fetch_upstream(
-        origin=config.bailian_gateway_base_url,
+        origin=config.bailian_gateway_base_urls_by_mode[proxy_request.mode],
         path=_build_openapi_path(proxy_request.path),
         search=proxy_request.search,
         method=proxy_request.method,

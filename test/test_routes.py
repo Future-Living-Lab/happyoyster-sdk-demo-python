@@ -1,5 +1,6 @@
 import json
 import unittest
+from uuid import UUID
 
 from .helpers import (
     RecordingFetch,
@@ -11,6 +12,15 @@ from .helpers import (
 
 
 class RoutesTest(unittest.TestCase):
+    def assert_gateway_error(self, body, code, message):
+        payload = json.loads(body)
+        self.assertEqual(UUID(payload["request_id"]).version, 4)
+        self.assertEqual(payload["output"], {
+            "code": code,
+            "message": f"[happyoyster-sdk-demo-python] {message}",
+            "data": {},
+        })
+
     def setUp(self):
         self._servers = []
 
@@ -29,7 +39,9 @@ class RoutesTest(unittest.TestCase):
         fetch = RecordingFetch(response=json_response({"code": 0, "data": "ok"}))
         base_url = self.start_server(fetch)
 
-        headers = {} if body is None else {"content-type": "application/json"}
+        headers = {"X-Happy-Oyster-Mode": "2"}
+        if body is not None:
+            headers["content-type"] = "application/json"
         status, response_body = http_request(
             f"{base_url}{request_path}", method=method, body=body, headers=headers
         )
@@ -51,7 +63,7 @@ class RoutesTest(unittest.TestCase):
         base_url = self.start_server(fetch)
 
         status, body = http_request(
-            f"{base_url}/server-api/worlds?page=1&filter=a%20b"
+            f"{base_url}/server-api/worlds?page=1&filter=a%20b&mode=2"
         )
 
         self.assertEqual(status, 200)
@@ -59,15 +71,25 @@ class RoutesTest(unittest.TestCase):
         call = fetch.last_call
         self.assertEqual(
             call["url"],
-            "https://example.test/api/v2/apps/happyoyster-1.0/openapi/v1/worlds?page=1&filter=a%20b",
+            "https://example.test/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds?page=1&filter=a%20b&mode=2",
         )
         self.assertEqual(call["method"], "GET")
         self.assertIsNone(call["body"])
 
+    def test_bailian_business_error_passes_through(self):
+        upstream_body = {
+            "request_id": "upstream-request-id",
+            "output": {"code": 400000, "message": "Bailian validation failed", "data": {}},
+        }
+        base_url = self.start_server(RecordingFetch(response=json_response(upstream_body)))
+        status, body = http_request(f"{base_url}/server-api/worlds?mode=2")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), upstream_body)
+
     def test_post_worlds_maps_to_openapi_world_creation(self):
         fetch = RecordingFetch(response=json_response({"code": 0, "data": {"id": 1}}))
         base_url = self.start_server(fetch)
-        request_body = b'{"title":"oyster"}'
+        request_body = b'{"mode":2,"title":"oyster"}'
 
         status, body = http_request(
             f"{base_url}/server-api/worlds",
@@ -81,7 +103,7 @@ class RoutesTest(unittest.TestCase):
         call = fetch.last_call
         self.assertEqual(
             call["url"],
-            "https://example.test/api/v2/apps/happyoyster-1.0/openapi/v1/worlds",
+            "https://example.test/api/v2/apps/happyoyster-1.0-directing/openapi/v1/worlds",
         )
         self.assertEqual(call["body"], request_body)
 
@@ -90,7 +112,7 @@ class RoutesTest(unittest.TestCase):
         self.assert_proxy_mapping(
             request_path="/server-api/worlds",
             expected_url=(
-                "https://example.test/api/v2/apps/happyoyster-1.0"
+                "https://example.test/api/v2/apps/happyoyster-1.0-directing"
                 "/openapi/v1/worlds"
             ),
             method="POST",
@@ -98,28 +120,75 @@ class RoutesTest(unittest.TestCase):
             expected_body=body.decode("utf-8"),
         )
 
-    def test_post_worlds_forwards_scenario_role_fields(self):
+    def test_world_creation_routes_each_mode(self):
+        names = {1: "adventure", 2: "directing", 3: "acting"}
+        fetch = RecordingFetch(response=json_response({"code": 0, "data": {}}))
+        base_url = self.start_server(fetch)
+        for mode, name in names.items():
+            status, _ = http_request(
+                f"{base_url}/server-api/worlds",
+                method="POST",
+                body=json.dumps({"mode": mode}).encode("utf-8"),
+                headers={"content-type": "application/json"},
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(
+                fetch.last_call["url"],
+                f"https://example.test/api/v2/apps/happyoyster-1.0-{name}/openapi/v1/worlds",
+            )
+
+    def test_list_and_follow_up_route_by_mode(self):
+        fetch = RecordingFetch(response=json_response({"code": 0, "data": {}}))
+        base_url = self.start_server(fetch)
+        status, _ = http_request(f"{base_url}/server-api/worlds?page=1&mode=3")
+        self.assertEqual(status, 200)
+        self.assertIn("happyoyster-1.0-acting", fetch.last_call["url"])
+        status, _ = http_request(
+            f"{base_url}/server-api/travels?page=1",
+            headers={"X-Happy-Oyster-Mode": "1"},
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("happyoyster-1.0-adventure", fetch.last_call["url"])
+        self.assertNotIn("x-happy-oyster-mode", fetch.last_call["headers"])
+
+    def test_missing_and_conflicting_modes_are_rejected_locally(self):
+        fetch = RecordingFetch(error=AssertionError("invalid mode reached upstream"))
+        base_url = self.start_server(fetch)
+        for path, headers in (
+            ("/server-api/worlds", {}),
+            ("/server-api/worlds?mode=1&mode=2", {}),
+            ("/server-api/worlds?mode=1", {"X-Happy-Oyster-Mode": "2"}),
+            ("/server-api/worlds?mode=1.9", {}),
+        ):
+            status, body = http_request(f"{base_url}{path}", headers=headers)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body)["output"]["code"], "PARAM_INVALID")
+        self.assertEqual(fetch.calls, [])
+
+    def test_explicit_null_body_mode_conflicts_with_header(self):
+        fetch = RecordingFetch(error=AssertionError("invalid mode reached upstream"))
+        base_url = self.start_server(fetch)
+        status, body = http_request(
+            f"{base_url}/server-api/worlds",
+            method="POST",
+            body=b'{"mode":null}',
+            headers={"content-type": "application/json", "X-Happy-Oyster-Mode": "2"},
+        )
+        self.assertEqual(status, 200)
+        self.assert_gateway_error(body, "PARAM_INVALID", "Request mode must be 1, 2, or 3")
+        self.assertEqual(fetch.calls, [])
+
+    def test_post_worlds_forwards_first_frame_fields(self):
         request_body = {
             "mode": 1,
             "async": True,
             "perspective": "first_person",
-            "uploadMode": "scenario_role",
-            "scenePrompt": "A neon oyster market at night",
-            "rolePrompt": "A cheerful robot guide",
-            "sceneImage": {
-                "url": "https://cdn.example.com/scene.jpg",
+            "prompt": "A neon oyster market at night",
+            "uploadMode": "first_frame",
+            "firstFrameImage": {
+                "url": "https://cdn.example.com/landscape.jpg",
                 "referenceType": "default",
             },
-            "roleImage": {
-                "url": "https://cdn.example.com/role.jpg",
-                "referenceType": "default",
-            },
-            "inputImages": [
-                {
-                    "base64": "SU5QVVRfSU1BR0U=",
-                    "referenceType": "default",
-                }
-            ],
         }
 
         fetch = RecordingFetch(response=json_response({"code": 0, "data": {"id": 1}}))
@@ -184,7 +253,7 @@ class RoutesTest(unittest.TestCase):
         self.assert_proxy_mapping(
             request_path="/server-api/travel-credential",
             expected_url=(
-                "https://example.test/api/v2/apps/happyoyster-1.0"
+                "https://example.test/api/v2/apps/happyoyster-1.0-directing"
                 "/openapi/v1/worlds/get-travel-credential"
             ),
             method="POST",
@@ -196,7 +265,7 @@ class RoutesTest(unittest.TestCase):
         self.assert_proxy_mapping(
             request_path="/server-api/worlds/build-status?encryptedWorldId=ENC_WORLD",
             expected_url=(
-                "https://example.test/api/v2/apps/happyoyster-1.0"
+                "https://example.test/api/v2/apps/happyoyster-1.0-directing"
                 "/openapi/v1/worlds/build-status?encryptedWorldId=ENC_WORLD"
             ),
         )
@@ -205,7 +274,7 @@ class RoutesTest(unittest.TestCase):
         self.assert_proxy_mapping(
             request_path="/server-api/worlds/detail?encryptedWorldId=ENC_WORLD",
             expected_url=(
-                "https://example.test/api/v2/apps/happyoyster-1.0"
+                "https://example.test/api/v2/apps/happyoyster-1.0-directing"
                 "/openapi/v1/worlds/detail?encryptedWorldId=ENC_WORLD"
             ),
         )
@@ -214,7 +283,7 @@ class RoutesTest(unittest.TestCase):
         self.assert_proxy_mapping(
             request_path="/server-api/worlds/delete",
             expected_url=(
-                "https://example.test/api/v2/apps/happyoyster-1.0"
+                "https://example.test/api/v2/apps/happyoyster-1.0-directing"
                 "/openapi/v1/worlds/delete"
             ),
             method="POST",
@@ -226,7 +295,7 @@ class RoutesTest(unittest.TestCase):
         self.assert_proxy_mapping(
             request_path="/server-api/travels?page=1&pageSize=20",
             expected_url=(
-                "https://example.test/api/v2/apps/happyoyster-1.0"
+                "https://example.test/api/v2/apps/happyoyster-1.0-directing"
                 "/openapi/v1/travels?page=1&pageSize=20"
             ),
         )
@@ -235,7 +304,7 @@ class RoutesTest(unittest.TestCase):
         self.assert_proxy_mapping(
             request_path="/server-api/travels/artifacts?encryptedTravelId=ENC_TRAVEL",
             expected_url=(
-                "https://example.test/api/v2/apps/happyoyster-1.0"
+                "https://example.test/api/v2/apps/happyoyster-1.0-directing"
                 "/openapi/v1/travels/artifacts?encryptedTravelId=ENC_TRAVEL"
             ),
         )
@@ -257,7 +326,7 @@ class RoutesTest(unittest.TestCase):
         self.assert_proxy_mapping(
             request_path="/server-api/travels/update-script",
             expected_url=(
-                "https://example.test/api/v2/apps/happyoyster-1.0"
+                "https://example.test/api/v2/apps/happyoyster-1.0-directing"
                 "/openapi/v1/travels/update-script"
             ),
             method="POST",
@@ -298,14 +367,9 @@ class RoutesTest(unittest.TestCase):
             headers={"content-type": "application/json"},
         )
 
-        self.assertEqual(status, 400)
-        self.assertEqual(
-            json.loads(body),
-            {
-                "success": False,
-                "errorCode": "PARAM_INVALID",
-                "message": "expire_in_seconds must be an integer between 1 and 1800",
-            },
+        self.assertEqual(status, 200)
+        self.assert_gateway_error(
+            body, "PARAM_INVALID", "expire_in_seconds must be an integer between 1 and 1800"
         )
         self.assertEqual(fetch.calls, [])
 
@@ -320,14 +384,9 @@ class RoutesTest(unittest.TestCase):
             headers={"content-type": "application/json"},
         )
 
-        self.assertEqual(status, 400)
-        self.assertEqual(
-            json.loads(body),
-            {
-                "success": False,
-                "errorCode": "PARAM_INVALID",
-                "message": "expire_in_seconds must be an integer between 1 and 1800",
-            },
+        self.assertEqual(status, 200)
+        self.assert_gateway_error(
+            body, "PARAM_INVALID", "expire_in_seconds must be an integer between 1 and 1800"
         )
         self.assertEqual(fetch.calls, [])
 
@@ -344,58 +403,44 @@ class RoutesTest(unittest.TestCase):
             headers={"content-type": "application/json"},
         )
 
-        self.assertEqual(status, 400)
-        self.assertEqual(
-            json.loads(body),
-            {
-                "success": False,
-                "errorCode": "PARAM_INVALID",
-                "message": "request body must be a JSON object",
-            },
-        )
+        self.assertEqual(status, 200)
+        self.assert_gateway_error(body, "PARAM_INVALID", "request body must be a JSON object")
         self.assertEqual(fetch.calls, [])
 
-    def test_unknown_path_returns_404(self):
+    def test_unknown_path_returns_gateway_error(self):
         base_url = self.start_server(RecordingFetch(response=json_response({})))
 
         status, body = http_request(f"{base_url}/missing")
 
-        self.assertEqual(status, 404)
-        self.assertEqual(body, b"Not Found\n")
+        self.assertEqual(status, 200)
+        self.assert_gateway_error(body, "NOT_FOUND", "Not Found")
 
-    def test_unknown_server_api_path_returns_404(self):
+    def test_unknown_server_api_path_returns_gateway_error(self):
         fetch = RecordingFetch(error=AssertionError("unknown path must not call upstream"))
         base_url = self.start_server(fetch)
 
         status, body = http_request(f"{base_url}/server-api/typo")
 
-        self.assertEqual(status, 404)
-        self.assertEqual(body, b"Not Found\n")
+        self.assertEqual(status, 200)
+        self.assert_gateway_error(body, "NOT_FOUND", "Not Found")
         self.assertEqual(fetch.calls, [])
 
-    def test_unsupported_method_returns_405(self):
+    def test_unsupported_method_returns_gateway_error(self):
         base_url = self.start_server(RecordingFetch(response=json_response({})))
 
         status, body = http_request(f"{base_url}/server-api/worlds", method="OPTIONS")
 
-        self.assertEqual(status, 405)
-        self.assertEqual(body, b"Method Not Allowed\n")
+        self.assertEqual(status, 200)
+        self.assert_gateway_error(body, "METHOD_NOT_ALLOWED", "Method Not Allowed")
 
-    def test_upstream_failure_returns_stable_502_envelope(self):
+    def test_upstream_failure_returns_gateway_error(self):
         fetch = RecordingFetch(error=RuntimeError("network down"))
         base_url = self.start_server(fetch)
 
-        status, body = http_request(f"{base_url}/server-api/worlds")
+        status, body = http_request(f"{base_url}/server-api/worlds?mode=2")
 
-        self.assertEqual(status, 502)
-        self.assertEqual(
-            json.loads(body),
-            {
-                "success": False,
-                "errorCode": "UPSTREAM_ERROR",
-                "message": "Upstream OpenAPI request failed",
-            },
-        )
+        self.assertEqual(status, 200)
+        self.assert_gateway_error(body, "UPSTREAM_ERROR", "Upstream OpenAPI request failed")
 
 
 if __name__ == "__main__":

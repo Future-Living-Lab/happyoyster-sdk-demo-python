@@ -3,7 +3,7 @@
 import json
 from urllib.parse import parse_qs
 
-from ...lib.http_utils import TEXT_CONTENT_TYPE, send_body, send_json
+from ...lib.http_utils import TEXT_CONTENT_TYPE, send_body, send_gateway_error
 from ...lib.request_body import read_request_body
 from .token_service import normalize_expire_in_seconds, request_temporary_api_key
 
@@ -35,15 +35,7 @@ def handle_temporary_api_key(handler, *, config, fetch_impl, url):
         body = _parse_json_body(read_request_body(handler))
         expire_in_seconds = normalize_expire_in_seconds(_pick_expire_in_seconds(url, body))
     except ValueError as error:
-        send_json(
-            handler,
-            400,
-            {
-                "success": False,
-                "errorCode": "PARAM_INVALID",
-                "message": str(error),
-            },
-        )
+        send_gateway_error(handler, "PARAM_INVALID", str(error))
         return
 
     upstream = request_temporary_api_key(
